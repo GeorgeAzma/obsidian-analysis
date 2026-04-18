@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch import Tensor
 from transformers import AutoTokenizer, AutoModel, BitsAndBytesConfig
 
-from config import cache_file, model_name, vault_path
+from config import cache_file, model_name, vault_path, exclude_files
 notes = []
 
 def last_token_pool(last_hidden_states: Tensor, attention_mask: Tensor) -> Tensor:
@@ -33,6 +33,9 @@ def process_notes(model_name, batch_size=1):
     for root, _, files in os.walk(vault_path):
         for f in files:
             if f.endswith(".md"):
+                title = os.path.basename(f)[:-3]
+                if title in exclude_files:
+                    continue
                 all_files.append(os.path.join(root, f))
     
     for i in range(0, len(all_files), batch_size):
@@ -45,7 +48,7 @@ def process_notes(model_name, batch_size=1):
                 title = os.path.basename(path)[:-3]
                 text = file.read()
                 batch_titles.append(title)
-                batch_texts.append(text)
+                batch_texts.append(f"# {title}\n\n{text}")
                 print(f"{i + len(batch_titles)}/{len(all_files)} {title}")
         
         inputs = tokenizer(batch_texts, return_tensors="pt", max_length=4096, padding='longest', truncation=True).to("cuda")
@@ -58,11 +61,12 @@ def process_notes(model_name, batch_size=1):
             notes.append({"title": title, "text": text, "path": path, "embedding": emb.cpu().numpy().tolist()})
         torch.cuda.empty_cache()
 
+    os.makedirs("output", exist_ok=True)
     with open(cache_file, "wb") as f:
         pickle.dump(notes, f)
     
-if os.path.exists(cache_file):
-    with open(cache_file, "rb") as f:
-        notes = pickle.load(f)
-else:
-    process_notes(model_name)
+# if os.path.exists(cache_file):
+#     with open(cache_file, "rb") as f:
+#         notes = pickle.load(f)
+# else:
+process_notes(model_name)
