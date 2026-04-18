@@ -65,8 +65,8 @@ def process_notes(model_name, batch_size=1):
     with open(cache_file, "wb") as f:
         pickle.dump(notes, f)
     
-# if os.path.exists(cache_file):
-#     with open(cache_file, "rb") as f:
-#         notes = pickle.load(f)
-# else:
-process_notes(model_name)
+if os.path.exists(cache_file):
+    with open(cache_file, "rb") as f:
+        notes = pickle.load(f)
+else:
+    process_notes(model_name)
