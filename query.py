@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torch import Tensor
 from transformers import AutoTokenizer, AutoModel, BitsAndBytesConfig
 
-from config import cache_file, model_name
+from config import note_cache_file, note_embedding_model
 
 def last_token_pool(last_hidden_states: Tensor, attention_mask: Tensor) -> Tensor:
     left_padding = (attention_mask[:, -1].sum() == attention_mask.shape[0])
@@ -17,7 +17,7 @@ def last_token_pool(last_hidden_states: Tensor, attention_mask: Tensor) -> Tenso
         return last_hidden_states[torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths]
 
 def load_notes():
-    with open(cache_file, "rb") as f:
+    with open(note_cache_file, "rb") as f:
         notes = pickle.load(f)
     return notes
 
@@ -42,9 +42,9 @@ def find_similar_notes(query_embedding, notes, top_k=10):
 
 if __name__ == "__main__":
     notes = load_notes()
-    tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side='left')
+    tokenizer = AutoTokenizer.from_pretrained(note_embedding_model, padding_side='left')
     model = AutoModel.from_pretrained(
-        model_name,
+        note_embedding_model,
         device_map="auto",
         torch_dtype=torch.float16,
         quantization_config=BitsAndBytesConfig(load_in_4bit=True),

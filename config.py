@@ -1,14 +1,12 @@
-# Path to the cached notes file
-cache_file = "output/notes.pkl"
+note_cache_file = "output/notes.pkl"
+image_cache_file = "output/images.pkl"
 
-# Model name for embeddings
-model_name = "Qwen/Qwen3-Embedding-4B"
+note_embedding_model = "Qwen/Qwen3-Embedding-4B" # "Qwen/Qwen3-Embedding-8B" for better quality but much slower
+image_embedding_model = "Qwen/Qwen3-VL-Embedding-2B" # "Qwen/Qwen3-VL-Embedding-8B" for better quality but much slower
+topic_name_gen_model = "microsoft/Phi-3.5-mini-instruct"
 
-# Generative model for topic naming
-gen_model_name = "microsoft/Phi-3.5-mini-instruct"
-
-# Vault path
 vault_path = "obsidian"
+image_path = "images"
 
 import os
 
@@ -20,4 +18,5 @@ if os.path.exists('.env'):
                 key, value = line.strip().split('=', 1)
                 os.environ[key] = value
 
-exclude_files = os.environ.get("EXCLUDE_FILES", "").split(",")
+exclude_notes = os.environ.get("EXCLUDE_NOTES", "").split(",")
+exclude_images = os.environ.get("EXCLUDE_IMAGES", "").split(",")

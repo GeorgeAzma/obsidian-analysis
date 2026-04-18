@@ -5,10 +5,10 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 import torch
 import json
 import re
-from config import cache_file, gen_model_name
+from config import note_cache_file, topic_name_gen_model
 
 def load_notes():
-    with open(cache_file, "rb") as f:
+    with open(note_cache_file, "rb") as f:
         notes = pickle.load(f)
     return notes
 
@@ -63,9 +63,9 @@ def main():
     labels, centroids = cluster_notes(notes)
 
     # Load generative model
-    tokenizer = AutoTokenizer.from_pretrained(gen_model_name)
+    tokenizer = AutoTokenizer.from_pretrained(topic_name_gen_model)
     model = AutoModelForCausalLM.from_pretrained(
-        gen_model_name,
+        topic_name_gen_model,
         device_map="auto",
         torch_dtype=torch.float16,
         quantization_config=BitsAndBytesConfig(load_in_4bit=True),
