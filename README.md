@@ -1,8 +1,12 @@
-Analyze and visualize your obsidian vault
-![plot](plot.webp) ![plot](plot-3d.webp)
+Analyze and visualize your obsidian vault and images based on semantic similarity
 
-- `main.py` generates `notes.pkl` file which contains all your notes and their embeddings using `Qwen3-Embedding-4B`
-- `plot.py` plots semantic similarity 2D and 3D interactive map
+![notes-2d](notes-2d.png) ![notes-3d](notes-3d.png)
+![images-2d](images-2d.png) ![images-3d](images-3d.png)
+
+- `main.py` 
+    - generates `notes.pkl` which contains all notes from `obsidian/` and their embeddings using `Qwen3-Embedding-4B`
+    - generates `images.pkl` which contains all images from `images/` and their embeddings using `Qwen3-VL-Embedding-2B` 
+- `plot.py` creates interactive 2D/3D point map of your notes and images positioned based on semantic similarity
 - `query.py` searches top most related notes based on your query
 - `gap.py` detects similar notes that are not linked `[[My Note]] <--> [[Related Note]]`
 - `word.py` analyzes top most used words
@@ -12,5 +16,6 @@ Analyze and visualize your obsidian vault
 
 - `pip install -r requirements.txt`
 - drop your obsidian notes inside `obsidian/`
-- run `main.py`
-- run `plot.py` or any other script you are interested in
+- drop your images inside `images/`
+- run `python main.py`
+- run `python plot.py`
