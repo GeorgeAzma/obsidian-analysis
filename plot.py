@@ -441,8 +441,8 @@ def main():
 
     section_specs = [
         ('notes', note_items, vault_path, dict(n_neighbors=30, min_dist=0.05)),
-        ('images', image_items, image_path, dict(n_neighbors=10, min_dist=0.01, spread=0.5, set_op_mix_ratio=0.5)),
-        ('combined', combined_items, None, dict(n_neighbors=40, min_dist=0.05, spread=0.5)),
+        ('images', image_items, image_path, dict(n_neighbors=10, min_dist=0.02)),
+        ('combined', combined_items, None, dict(n_neighbors=40, min_dist=0.1)),
     ]
 
     prepared_sections = []
