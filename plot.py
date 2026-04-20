@@ -46,6 +46,21 @@ def compute_umap(embeddings, n_components):
     return reducer.fit_transform(embeddings)
 
 
+def format_item_details(item, is_image=False):
+    if is_image:
+        metadata = item.get('metadata') or {}
+        resolution = metadata.get('resolution', 'unknown resolution')
+        file_size = metadata.get('file_size', 'unknown size')
+        created_at = metadata.get('created_at', 'unknown date')
+        return f'{resolution} • {file_size} • {created_at}'
+
+    stats = item.get('stats') or {}
+    word_count = stats.get('word_count', 0)
+    unique_word_count = stats.get('unique_word_count', 0)
+    character_count = stats.get('character_count', 0)
+    return f'{word_count} words • {unique_word_count} unique • {character_count} chars'
+
+
 def write_html(fig, output_path, preview_kind=None):
     fig.write_html(output_path, config={"displayModeBar": False, "displaylogo": False})
     with open(output_path, 'r', encoding='utf-8') as f:
@@ -228,9 +243,9 @@ document.addEventListener('DOMContentLoaded', function() {
         f.write(html_content)
 
 
-def make_figure(embeddings, titles, groups, previews=None):
+def make_figure(embeddings, titles, groups, previews=None, details=None):
     hover_template = '<b>%{text}</b><br>%{customdata[0]}<extra></extra>'
-    customdata = list(zip(groups, previews))
+    customdata = list(zip(groups, previews, details))
     if embeddings.shape[1] == 2:
         fig = go.Figure(data=go.Scatter(
             x=embeddings[:, 0],
@@ -286,7 +301,6 @@ def write_index_html(output_path, sections):
         plots[section['id']] = {
             'figure': json.loads(section['figure'].to_json()),
             'kind': section['kind'],
-            'stats': section.get('stats'),
         }
     with open('template.html', 'r', encoding='utf-8') as f:
         template = Template(f.read())
@@ -323,6 +337,10 @@ def build_image_uris(items):
     return uris
 
 
+def build_item_details(items, is_image=False):
+    return [format_item_details(item, is_image=is_image) for item in items]
+
+
 def build_note_previews(items, max_length=1600):
     wikilinks = build_wikilink_map(items)
     previews = []
@@ -333,25 +351,6 @@ def build_note_previews(items, max_length=1600):
             markdown_text = markdown_text[:max_length].rsplit(' ', 1)[0] + '...'
         previews.append(render_markdown_preview(markdown_text, wikilinks))
     return previews
-
-
-def compute_word_stats(items):
-    all_text = ' '.join((item.get('text', '') or '') for item in items)
-    words = re.findall(r'\b\w+\b', all_text.lower())
-    stop_words = {
-        'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
-        'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does',
-        'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'this', 'that',
-        'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us',
-        'them', 'my', 'your', 'his', 'its', 'our', 'their', 'what', 'which', 'who', 'when', 'where',
-        'why', 'how',
-    }
-    filtered_words = [word for word in words if word not in stop_words and len(word) > 2]
-    return {
-        'total_words': len(words),
-        'unique_words': len(set(filtered_words)),
-        'characters': len(all_text),
-    }
 
 
 def process_section(cache_path, base_path, prefix, is_image=False):
@@ -368,8 +367,8 @@ def process_section(cache_path, base_path, prefix, is_image=False):
     embeddings = np.array([item['embedding'] for item in items])
     groups = build_groups(items, base_path)
     previews = build_image_uris(items) if is_image else build_note_previews(items)
+    details = build_item_details(items, is_image=is_image)
     kind = 'image' if is_image else 'notes'
-    stats = compute_word_stats(items) if not is_image else None
 
     embeddings_2d = compute_umap(embeddings, 2)
     embeddings_3d = compute_umap(embeddings, 3)
@@ -378,14 +377,12 @@ def process_section(cache_path, base_path, prefix, is_image=False):
         {
             'id': f'{prefix}-2d',
             'kind': kind,
-            'stats': stats,
-            'figure': make_figure(embeddings_2d, titles, groups, previews=previews),
+            'figure': make_figure(embeddings_2d, titles, groups, previews=previews, details=details),
         },
         {
             'id': f'{prefix}-3d',
             'kind': kind,
-            'stats': stats,
-            'figure': make_figure(embeddings_3d, titles, groups, previews=previews),
+            'figure': make_figure(embeddings_3d, titles, groups, previews=previews, details=details),
         },
     ]
 
