@@ -1,8 +1,9 @@
 import os
 import json
 import pickle
-import re
+import hashlib
 import webbrowser
+from concurrent.futures import ProcessPoolExecutor
 from string import Template
 from pathlib import Path
 
@@ -14,15 +15,18 @@ import umap
 
 from config import image_cache_file, image_path, note_cache_file, summary_cache_file, vault_path
 from src.markdown_preview import build_wikilink_map, render_markdown_preview
+from src.util import load_cache
+
+umap_cache_file = "output/umap_cache.pkl"
 
 
 def ensure_output_dir():
     os.makedirs("output", exist_ok=True)
 
 
-def load_pickle(path):
-    with open(path, "rb") as f:
-        return pickle.load(f)
+def save_pickle(path, value):
+    with open(path, "wb") as f:
+        pickle.dump(value, f)
 
 
 def path_uri(path):
@@ -36,18 +40,33 @@ def color_map(groups):
     return [color_lookup[group] for group in groups]
 
 
-def compute_umap(embeddings, n_components):
+def umap_embedding_signature(embeddings):
+    hasher = hashlib.sha256()
+    array = np.ascontiguousarray(embeddings)
+    hasher.update(memoryview(array))
+    hasher.update(str(tuple(array.shape)).encode("utf-8"))
+    return hasher.hexdigest()
+
+
+def umap_cache_key(embedding_signature, n_components, kwargs):
+    hasher = hashlib.sha256()
+    hasher.update(embedding_signature.encode("utf-8"))
+    hasher.update(str(n_components).encode("utf-8"))
+    hasher.update(repr(sorted(kwargs.items())).encode("utf-8"))
+    return hasher.hexdigest()
+
+
+def compute_umap(embeddings, n_components, **kwargs):
     reducer = umap.UMAP(
-        n_neighbors=15,
-        min_dist=0.1,
         n_components=n_components,
-        metric='cosine',
+        metric="cosine",
+        **kwargs
     )
     return reducer.fit_transform(embeddings)
 
 
-def format_item_details(item, is_image=False):
-    if is_image:
+def format_item_details(item):
+    if item.get('kind') == 'image':
         metadata = item.get('metadata') or {}
         resolution = metadata.get('resolution', 'unknown resolution')
         file_size = metadata.get('file_size', 'unknown size')
@@ -59,6 +78,28 @@ def format_item_details(item, is_image=False):
     unique_word_count = stats.get('unique_words', stats.get('unique_word_count', 0))
     character_count = stats.get('chars', stats.get('character_count', 0))
     return f'{word_count:,} words • {unique_word_count:,} unique • {character_count:,} chars'
+
+
+def load_items(cache_path, default_kind):
+    items = load_cache(cache_path)
+    normalized_items = []
+    for item in items:
+        normalized_item = dict(item)
+        normalized_item.setdefault('kind', default_kind)
+        normalized_items.append(normalized_item)
+    return normalized_items
+
+
+def build_note_preview_lookup(items, max_length=1600):
+    wikilinks = build_wikilink_map(items)
+    previews = {}
+    for item in items:
+        markdown_text = (item.get('text', '') or '').strip()
+        markdown_text = markdown_text.replace('\r', '')
+        if len(markdown_text) > max_length:
+            markdown_text = markdown_text[:max_length].rsplit(' ', 1)[0] + '...'
+        previews[item['title']] = render_markdown_preview(markdown_text, wikilinks)
+    return previews
 
 
 def write_html(fig, output_path, preview_kind=None):
@@ -176,13 +217,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     plot.on('plotly_hover', function(event) {
         var pt = event.points && event.points[0];
-        if (!pt || !pt.customdata || !pt.customdata[1]) return;
+        if (!pt || !pt.customdata || !pt.customdata[2]) return;
         var previewContent = document.getElementById('note-hover-preview-content');
         var nativeEvent = event.event || {};
         var touchPoint = nativeEvent.touches && nativeEvent.touches[0] ? nativeEvent.touches[0] : (nativeEvent.changedTouches && nativeEvent.changedTouches[0] ? nativeEvent.changedTouches[0] : null);
         var clientX = typeof nativeEvent.clientX === 'number' ? nativeEvent.clientX : (touchPoint ? touchPoint.clientX : null);
         placePreview(clientX);
-        previewContent.innerHTML = pt.customdata[1];
+        previewContent.innerHTML = pt.customdata[2];
         preview.style.display = 'block';
         if (window.MathJax && MathJax.typesetPromise) {
             MathJax.typesetPromise([previewContent]).catch(function() {});
@@ -217,13 +258,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     plot.on('plotly_hover', function(event) {
         var pt = event.points && event.points[0];
-        if (!pt || !pt.customdata || !pt.customdata[1]) return;
+        if (!pt || !pt.customdata || !pt.customdata[2]) return;
         var img = document.getElementById('image-hover-preview-img');
         var nativeEvent = event.event || {};
         var touchPoint = nativeEvent.touches && nativeEvent.touches[0] ? nativeEvent.touches[0] : (nativeEvent.changedTouches && nativeEvent.changedTouches[0] ? nativeEvent.changedTouches[0] : null);
         var clientX = typeof nativeEvent.clientX === 'number' ? nativeEvent.clientX : (touchPoint ? touchPoint.clientX : null);
         placePreview(clientX);
-        img.src = pt.customdata[1];
+        img.src = pt.customdata[2];
         preview.style.display = 'block';
     });
 
@@ -243,9 +284,9 @@ document.addEventListener('DOMContentLoaded', function() {
         f.write(html_content)
 
 
-def make_figure(embeddings, titles, groups, previews=None, details=None):
-    hover_template = '<b>%{text}</b><br>%{customdata[0]}<extra></extra>'
-    customdata = list(zip(groups, previews, details))
+def make_figure(embeddings, titles, groups, kinds, previews, details):
+    hover_template = '<b>%{text}</b><br>%{customdata[1]}<extra></extra>'
+    customdata = list(zip(kinds or [], groups, previews, details))
     if embeddings.shape[1] == 2:
         fig = go.Figure(data=go.Scatter(
             x=embeddings[:, 0],
@@ -299,7 +340,7 @@ def write_index_html(output_path, sections, global_summary):
     plots = {}
     for section in sections:
         plots[section['id']] = {
-            'figure': json.loads(section['figure'].to_json()),
+            'figure': section['figure'].to_plotly_json(),
             'kind': section['kind'],
         }
     with open('template.html', 'r', encoding='utf-8') as f:
@@ -313,12 +354,13 @@ def write_index_html(output_path, sections, global_summary):
         f.write(html_content)
 
 
-def build_groups(items, base_path):
+def build_groups(items, base_path=None):
     groups = []
     for item in items:
         path = item.get('path', '')
         if path:
-            folder = os.path.relpath(os.path.dirname(path), base_path)
+            item_base_path = base_path or (image_path if item.get('kind') == 'image' else vault_path)
+            folder = os.path.relpath(os.path.dirname(path), item_base_path)
             if folder == '.':
                 folder = 'root'
         else:
@@ -326,87 +368,138 @@ def build_groups(items, base_path):
         groups.append(folder)
     return groups
 
-
-def build_image_uris(items):
-    uris = []
-    for item in items:
-        path = item.get('path')
-        if not path or not os.path.exists(path):
-            uris.append('')
-            continue
-        uris.append(path_uri(path))
-    return uris
-
-
-def build_item_details(items, is_image=False):
-    return [format_item_details(item, is_image=is_image) for item in items]
-
-
-def build_note_previews(items, max_length=1600):
-    wikilinks = build_wikilink_map(items)
-    previews = []
-    for item in items:
-        markdown_text = (item.get('text', '') or '').strip()
-        markdown_text = markdown_text.replace('\r', '')
-        if len(markdown_text) > max_length:
-            markdown_text = markdown_text[:max_length].rsplit(' ', 1)[0] + '...'
-        previews.append(render_markdown_preview(markdown_text, wikilinks))
-    return previews
-
-
 def format_global_summary(summary):
     if not summary:
         return 'Global metadata\nUnavailable'
 
     return ' • '.join([
-        f'{summary.get('notes', 0):,} notes',
-        f'{summary.get('images', 0):,} images',
-        f'{summary.get('words', 0):,} words',
-        f'{summary.get('unique_words', 0):,} unique',
-        f'{summary.get('chars', 0):,} chars',
+        f"{summary.get('notes', 0):,} notes",
+        f"{summary.get('images', 0):,} images",
+        f"{summary.get('words', 0):,} words",
+        f"{summary.get('unique_words', 0):,} unique",
+        f"{summary.get('chars', 0):,} chars",
     ])
 
 
-def process_section(cache_path, base_path, prefix, is_image=False):
-    if not os.path.exists(cache_path):
-        print(f"Skipping {prefix} plot generation because pickle file does not exist: {cache_path}")
-        return
+def build_previews(items, note_preview_lookup=None):
+    note_items = [item for item in items if item.get('kind') != 'image']
+    note_preview_lookup = note_preview_lookup or {}
+    if note_items:
+        if not note_preview_lookup:
+            note_preview_lookup = build_note_preview_lookup(note_items)
 
-    items = load_pickle(cache_path)
+    previews = []
+    for item in items:
+        if item.get('kind') == 'image':
+            path = item.get('path')
+            previews.append(path_uri(path) if path and os.path.exists(path) else '')
+        else:
+            previews.append(note_preview_lookup.get(item['title'], ''))
+    return previews
+
+
+def build_item_details(items):
+    return [format_item_details(item) for item in items]
+
+
+def prepare_section(items, base_path, prefix, note_preview_lookup=None):
     if not items:
-        print(f"Skipping {prefix} plot generation because pickle file is empty: {cache_path}")
-        return
+        print(f"Skipping {prefix} plot generation because pickle file is empty or missing.")
+        return None
 
     titles = [item['title'] for item in items]
-    embeddings = np.array([item['embedding'] for item in items])
+    embeddings = np.ascontiguousarray(np.stack([np.asarray(item['embedding']) for item in items]))
     groups = build_groups(items, base_path)
-    previews = build_image_uris(items) if is_image else build_note_previews(items)
-    details = build_item_details(items, is_image=is_image)
-    kind = 'image' if is_image else 'notes'
+    previews = build_previews(items, note_preview_lookup=note_preview_lookup)
+    details = build_item_details(items)
+    kinds = [item.get('kind', 'note') for item in items]
 
-    embeddings_2d = compute_umap(embeddings, 2)
-    embeddings_3d = compute_umap(embeddings, 3)
-
-    return [
-        {
-            'id': f'{prefix}-2d',
-            'kind': kind,
-            'figure': make_figure(embeddings_2d, titles, groups, previews=previews, details=details),
-        },
-        {
-            'id': f'{prefix}-3d',
-            'kind': kind,
-            'figure': make_figure(embeddings_3d, titles, groups, previews=previews, details=details),
-        },
-    ]
+    return {
+        'prefix': prefix,
+        'titles': titles,
+        'embeddings': embeddings,
+        'embedding_signature': umap_embedding_signature(embeddings),
+        'groups': groups,
+        'previews': previews,
+        'details': details,
+        'kinds': kinds,
+    }
 
 
 def main():
     ensure_output_dir()
     sections = []
-    global_summary = load_pickle(summary_cache_file) if os.path.exists(summary_cache_file) else None
-    sections.extend(process_section(note_cache_file, vault_path, 'notes', is_image=False) or [])
-    sections.extend(process_section(image_cache_file, image_path, 'images', is_image=True) or [])
+    global_summary = load_cache(summary_cache_file)
+    umap_cache = load_cache(umap_cache_file, default={})
+    if not isinstance(umap_cache, dict):
+        umap_cache = {}
+
+    note_items = load_items(note_cache_file, 'note') if os.path.exists(note_cache_file) else []
+    image_items = load_items(image_cache_file, 'image') if os.path.exists(image_cache_file) else []
+    combined_items = note_items + image_items
+    note_preview_lookup = build_note_preview_lookup(note_items) if note_items else {}
+
+    section_specs = [
+        ('notes', note_items, vault_path, dict(n_neighbors=30, min_dist=0.05, spread=1)),
+        ('images', image_items, image_path, dict(n_neighbors=15, min_dist=0.2, spread=0.5, set_op_mix_ratio=0.5, negative_sample_rate=3, repulsion_strength=1.5)),
+        ('combined', combined_items, None, dict(n_neighbors=15, min_dist=0.2, spread=0.5, set_op_mix_ratio=0.5, negative_sample_rate=3, repulsion_strength=1.5)),
+    ]
+
+    prepared_sections = []
+    for prefix, items, base_path, kwargs in section_specs:
+        section = prepare_section(items, base_path, prefix, note_preview_lookup=note_preview_lookup)
+        if section is None:
+            continue
+        section['kwargs'] = kwargs
+        prepared_sections.append(section)
+
+    pending_jobs = []
+    results = {}
+    for section in prepared_sections:
+        for dimensions in (2, 3):
+            cache_key = umap_cache_key(section['embedding_signature'], dimensions, section['kwargs'])
+            cached_value = umap_cache.get(cache_key)
+            if cached_value is not None:
+                results[(section['prefix'], dimensions)] = cached_value
+                continue
+            pending_jobs.append((cache_key, section['embeddings'], dimensions, section['kwargs'], section['prefix']))
+
+    if pending_jobs:
+        with ProcessPoolExecutor(max_workers=min(6, os.cpu_count() or 1)) as executor:
+            futures = [
+                (
+                    cache_key,
+                    section_prefix,
+                    dimensions,
+                    executor.submit(compute_umap, embeddings, dimensions, **kwargs),
+                )
+                for cache_key, embeddings, dimensions, kwargs, section_prefix in pending_jobs
+            ]
+
+            for cache_key, section_prefix, dimensions, future in futures:
+                result = future.result()
+                umap_cache[cache_key] = result
+                results[(section_prefix, dimensions)] = result
+
+        save_pickle(umap_cache_file, umap_cache)
+
+    for section in prepared_sections:
+        prefix = section['prefix']
+        embeddings_2d = results[(prefix, 2)]
+        embeddings_3d = results[(prefix, 3)]
+        sections.extend([
+            {
+                'id': f'{prefix}-2d',
+                'kind': prefix,
+                'figure': make_figure(embeddings_2d, section['titles'], section['groups'], kinds=section['kinds'], previews=section['previews'], details=section['details']),
+            },
+            {
+                'id': f'{prefix}-3d',
+                'kind': prefix,
+                'figure': make_figure(embeddings_3d, section['titles'], section['groups'], kinds=section['kinds'], previews=section['previews'], details=section['details']),
+            },
+        ])
+
     index_path = os.path.abspath('output/index.html')
     write_index_html(index_path, sections, global_summary)
     webbrowser.open(path_uri(index_path))

@@ -1,12 +1,7 @@
-import pickle
 import numpy as np
 import re
 from config import note_cache_file
-
-def load_notes():
-    with open(note_cache_file, "rb") as f:
-        notes = pickle.load(f)
-    return notes
+from src.util import load_cache
 
 def extract_links(text):
     # Find all [[link]] patterns
@@ -14,7 +9,7 @@ def extract_links(text):
     return set(links)
 
 def find_gaps():
-    notes = load_notes()
+    notes = load_cache(note_cache_file)
     
     links_dict = {note['title']: extract_links(note['text']) for note in notes}
     

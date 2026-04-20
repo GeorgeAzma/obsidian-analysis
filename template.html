@@ -86,27 +86,52 @@ function setDetailsPanel(detailsPanel, text) {
 function attachHoverHandlers(plotDiv, preview, detailsPanel, kind) {
     plotDiv.on('plotly_hover', function(event) {
         var pt = event.points && event.points[0];
-        if (!pt || !pt.customdata || !pt.customdata[1]) return;
+        if (!pt || !pt.customdata || !pt.customdata[2]) return;
+        var itemKind = pt.customdata[0];
         var nativeEvent = event.event || {};
         var touchPoint = nativeEvent.touches && nativeEvent.touches[0] ? nativeEvent.touches[0] : (nativeEvent.changedTouches && nativeEvent.changedTouches[0] ? nativeEvent.changedTouches[0] : null);
         var clientX = typeof nativeEvent.clientX === 'number' ? nativeEvent.clientX : (touchPoint ? touchPoint.clientX : null);
         placePreview(preview, clientX);
-        if (kind === 'image') {
-            preview.querySelector('img').src = pt.customdata[1];
+        var markdownPreview = preview.querySelector('.markdown-preview');
+        var imagePreview = preview.querySelector('img');
+        if (itemKind === 'image') {
+            if (imagePreview) {
+                imagePreview.src = pt.customdata[2];
+                imagePreview.style.display = 'block';
+            }
+            if (markdownPreview) {
+                markdownPreview.style.display = 'none';
+            }
         } else {
-            preview.querySelector('.markdown-preview').innerHTML = pt.customdata[1];
-            if (window.MathJax && MathJax.typesetPromise) {
-                MathJax.typesetPromise([preview.querySelector('.markdown-preview')]).catch(function() {});
+            if (markdownPreview) {
+                markdownPreview.innerHTML = pt.customdata[2];
+                markdownPreview.style.display = 'block';
+                if (window.MathJax && MathJax.typesetPromise) {
+                    MathJax.typesetPromise([markdownPreview]).catch(function() {});
+                }
+            }
+            if (imagePreview) {
+                imagePreview.src = '';
+                imagePreview.style.display = 'none';
             }
         }
-        if (detailsPanel && pt.customdata && pt.customdata[2]) {
-            setDetailsPanel(detailsPanel, pt.customdata[2]);
+        if (detailsPanel && pt.customdata && pt.customdata[3]) {
+            setDetailsPanel(detailsPanel, pt.customdata[3]);
         }
         preview.style.display = 'block';
     });
 
     plotDiv.on('plotly_unhover', function() {
         preview.style.display = 'none';
+        var markdownPreview = preview.querySelector('.markdown-preview');
+        var imagePreview = preview.querySelector('img');
+        if (markdownPreview) {
+            markdownPreview.style.display = 'block';
+        }
+        if (imagePreview) {
+            imagePreview.style.display = 'block';
+            imagePreview.src = '';
+        }
         if (detailsPanel) {
             setDetailsPanel(detailsPanel, window.__GLOBAL_SUMMARY__);
         }
@@ -194,6 +219,8 @@ document.addEventListener('DOMContentLoaded', function() {
     <button class="tab" data-target="notes-3d">Notes 3D</button>
     <button class="tab" data-target="images-2d">Images 2D</button>
     <button class="tab" data-target="images-3d">Images 3D</button>
+    <button class="tab" data-target="combined-2d">Images & Notes 2D</button>
+    <button class="tab" data-target="combined-3d">Images & Notes 3D</button>
 </div>
 <div class="stats" id="item-details" aria-live="polite"></div>
 <div class="empty-state" id="empty-state"><div class="panel">No plots are available yet. Run <strong>main.py</strong> to generate the caches, then run <strong>plot.py</strong> again.</div></div>
@@ -202,6 +229,8 @@ document.addEventListener('DOMContentLoaded', function() {
     <div class="view" id="notes-3d"><div class="plot"></div><div class="preview"><div class="markdown-preview"></div></div></div>
     <div class="view" id="images-2d"><div class="plot"></div><div class="preview image"><img src="" alt="Preview"></div></div>
     <div class="view" id="images-3d"><div class="plot"></div><div class="preview image"><img src="" alt="Preview"></div></div>
+    <div class="view" id="combined-2d"><div class="plot"></div><div class="preview image"><img src="" alt="Preview"><div class="markdown-preview"></div></div></div>
+    <div class="view" id="combined-3d"><div class="plot"></div><div class="preview image"><img src="" alt="Preview"><div class="markdown-preview"></div></div></div>
 </div>
 </body>
 </html>

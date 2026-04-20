@@ -2,9 +2,10 @@ note_cache_file = "output/notes.pkl"
 image_cache_file = "output/images.pkl"
 summary_cache_file = "output/summary.pkl"
 
-note_embedding_model = "Qwen/Qwen3-Embedding-4B" # "Qwen/Qwen3-Embedding-8B" for better quality but much slower
-image_embedding_model = "Qwen/Qwen3-VL-Embedding-2B" # "Qwen/Qwen3-VL-Embedding-8B" for better quality but much slower
-topic_name_gen_model = "microsoft/Phi-3.5-mini-instruct"
+embedding_model = "Qwen/Qwen3-VL-Embedding-2B" # "Qwen/Qwen3-VL-Embedding-8B" for better quality but much slower
+embedding_max_seq_length = 2048
+retrieval_prompt = "Retrieve relevant documents for the query."
+document_prompt = "Represent this note, image, or query for semantic retrieval."
 
 vault_path = "obsidian"
 image_path = "images"
