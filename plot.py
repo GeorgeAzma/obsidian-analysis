@@ -58,7 +58,7 @@ def format_item_details(item, is_image=False):
     word_count = stats.get('words', stats.get('word_count', 0))
     unique_word_count = stats.get('unique_words', stats.get('unique_word_count', 0))
     character_count = stats.get('chars', stats.get('character_count', 0))
-    return f'{word_count} words • {unique_word_count} unique • {character_count} chars'
+    return f'{word_count:,} words • {unique_word_count:,} unique • {character_count:,} chars'
 
 
 def write_html(fig, output_path, preview_kind=None):

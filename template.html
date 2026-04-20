@@ -10,6 +10,9 @@ body { position: relative; }
 .stats { position: fixed; left: 16px; bottom: 16px; z-index: 999; display: none; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 12px; background: rgba(13, 17, 23, 0.10); border: 1px solid rgba(255, 255, 255, 0.04); color: rgba(226, 232, 240, 0.36); backdrop-filter: blur(10px); white-space: pre-line; pointer-events: none; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06); font-size: 12px; line-height: 1.35; max-width: 480px; }
 .stats.visible { display: flex; }
 .stats .value { font-size: 12px; line-height: 1.35; font-weight: 500; color: rgba(226, 232, 240, 0.44); }
+.empty-state { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; padding: 32px; color: rgba(226, 232, 240, 0.72); font-size: 15px; line-height: 1.5; background: #020617; }
+.empty-state.visible { display: flex; }
+.empty-state .panel { max-width: 560px; padding: 20px 22px; border-radius: 16px; background: rgba(15, 23, 42, 0.72); border: 1px solid rgba(148, 163, 184, 0.18); backdrop-filter: blur(10px); box-shadow: 0 16px 48px rgba(0, 0, 0, 0.32); }
 .views { position: absolute; inset: 0; }
 .view { position: absolute; inset: 0; display: none; }
 .view.active { display: block; }
@@ -113,6 +116,7 @@ function attachHoverHandlers(plotDiv, preview, detailsPanel, kind) {
 function renderSection(sectionId) {
     var section = window.__PLOTS__[sectionId];
     var view = document.getElementById(sectionId);
+    if (!section || !view) return;
     var plot = view.querySelector('.plot');
     if (plot.dataset.rendered) return;
 
@@ -131,10 +135,35 @@ document.addEventListener('DOMContentLoaded', function() {
     var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
     var views = Array.prototype.slice.call(document.querySelectorAll('.view'));
     var detailsPanel = document.getElementById('item-details');
+    var emptyState = document.getElementById('empty-state');
+    var availableSectionIds = Object.keys(window.__PLOTS__ || {});
 
     setDetailsPanel(detailsPanel, window.__GLOBAL_SUMMARY__);
 
+    tabs.forEach(function(tab) {
+        var target = tab.dataset.target;
+        if (!window.__PLOTS__[target]) {
+            tab.style.display = 'none';
+        }
+    });
+
+    views.forEach(function(view) {
+        if (!window.__PLOTS__[view.id]) {
+            view.style.display = 'none';
+        }
+    });
+
+    if (!availableSectionIds.length) {
+        if (emptyState) {
+            emptyState.classList.add('visible');
+        }
+        return;
+    }
+
     function activate(name) {
+        if (!window.__PLOTS__[name]) {
+            return;
+        }
         tabs.forEach(function(tab) {
             tab.classList.toggle('active', tab.dataset.target === name);
         });
@@ -155,7 +184,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    activate('notes-2d');
+    activate(availableSectionIds[0]);
 });
 </script>
 </head>
@@ -167,6 +196,7 @@ document.addEventListener('DOMContentLoaded', function() {
     <button class="tab" data-target="images-3d">Images 3D</button>
 </div>
 <div class="stats" id="item-details" aria-live="polite"></div>
+<div class="empty-state" id="empty-state"><div class="panel">No plots are available yet. Run <strong>main.py</strong> to generate the caches, then run <strong>plot.py</strong> again.</div></div>
 <div class="views">
     <div class="view" id="notes-2d"><div class="plot"></div><div class="preview"><div class="markdown-preview"></div></div></div>
     <div class="view" id="notes-3d"><div class="plot"></div><div class="preview"><div class="markdown-preview"></div></div></div>
