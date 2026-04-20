@@ -7,6 +7,9 @@ body { position: relative; }
 .tabs { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1000; display: flex; gap: 8px; pointer-events: auto; }
 .tab { appearance: none; border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(13, 17, 23, 0.12); color: #c9d1d9; border-radius: 999px; padding: 8px 14px; font: inherit; cursor: pointer; backdrop-filter: blur(8px); }
 .tab.active { background: rgba(31, 111, 235, 0.92); border-color: rgba(31, 111, 235, 0.92); color: #fff; }
+.stats { position: fixed; left: 16px; bottom: 16px; z-index: 999; display: none; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 12px; background: rgba(13, 17, 23, 0.12); border: 1px solid rgba(255, 255, 255, 0.05); color: rgba(226, 232, 240, 0.44); backdrop-filter: blur(10px); white-space: nowrap; pointer-events: none; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08); }
+.stats.visible { display: flex; }
+.stats .value { font-size: 12px; line-height: 1.35; font-weight: 500; color: rgba(226, 232, 240, 0.52); }
 .views { position: absolute; inset: 0; }
 .view { position: absolute; inset: 0; display: none; }
 .view.active { display: block; }
@@ -92,6 +95,24 @@ function attachHoverHandlers(plotDiv, preview, kind) {
     });
 }
 
+function formatNoteStats(stats) {
+    if (!stats) return '';
+    return stats.total_words.toLocaleString() + ' words  •  ' + stats.unique_words.toLocaleString() + ' unique  •  ' + stats.characters.toLocaleString() + ' chars';
+}
+
+function updateStatsDisplay(sectionId) {
+    var statsEl = document.getElementById('note-stats');
+    if (!statsEl) return;
+    var section = window.__PLOTS__[sectionId];
+    if (section && section.kind === 'notes' && section.stats) {
+        statsEl.querySelector('.value').textContent = formatNoteStats(section.stats);
+        statsEl.classList.add('visible');
+    } else {
+        statsEl.classList.remove('visible');
+        statsEl.querySelector('.value').textContent = '';
+    }
+}
+
 function renderSection(sectionId) {
     var section = window.__PLOTS__[sectionId];
     var view = document.getElementById(sectionId);
@@ -125,6 +146,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (plot && plot.dataset.rendered) {
             requestAnimationFrame(function() { Plotly.Plots.resize(plot); });
         }
+        updateStatsDisplay(name);
     }
 
     tabs.forEach(function(tab) {
@@ -143,6 +165,9 @@ document.addEventListener('DOMContentLoaded', function() {
     <button class="tab" data-target="notes-3d">Notes 3D</button>
     <button class="tab" data-target="images-2d">Images 2D</button>
     <button class="tab" data-target="images-3d">Images 3D</button>
+</div>
+<div class="stats" id="note-stats" aria-live="polite">
+    <span class="value"></span>
 </div>
 <div class="views">
     <div class="view" id="notes-2d"><div class="plot"></div><div class="preview"><div class="markdown-preview"></div></div></div>

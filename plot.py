@@ -1,6 +1,7 @@
 import os
 import json
 import pickle
+import re
 import webbrowser
 from string import Template
 from pathlib import Path
@@ -285,6 +286,7 @@ def write_index_html(output_path, sections):
         plots[section['id']] = {
             'figure': json.loads(section['figure'].to_json()),
             'kind': section['kind'],
+            'stats': section.get('stats'),
         }
     with open('template.html', 'r', encoding='utf-8') as f:
         template = Template(f.read())
@@ -333,6 +335,25 @@ def build_note_previews(items, max_length=1600):
     return previews
 
 
+def compute_word_stats(items):
+    all_text = ' '.join((item.get('text', '') or '') for item in items)
+    words = re.findall(r'\b\w+\b', all_text.lower())
+    stop_words = {
+        'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
+        'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does',
+        'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'this', 'that',
+        'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us',
+        'them', 'my', 'your', 'his', 'its', 'our', 'their', 'what', 'which', 'who', 'when', 'where',
+        'why', 'how',
+    }
+    filtered_words = [word for word in words if word not in stop_words and len(word) > 2]
+    return {
+        'total_words': len(words),
+        'unique_words': len(set(filtered_words)),
+        'characters': len(all_text),
+    }
+
+
 def process_section(cache_path, base_path, prefix, is_image=False):
     if not os.path.exists(cache_path):
         print(f"Skipping {prefix} plot generation because pickle file does not exist: {cache_path}")
@@ -348,6 +369,7 @@ def process_section(cache_path, base_path, prefix, is_image=False):
     groups = build_groups(items, base_path)
     previews = build_image_uris(items) if is_image else build_note_previews(items)
     kind = 'image' if is_image else 'notes'
+    stats = compute_word_stats(items) if not is_image else None
 
     embeddings_2d = compute_umap(embeddings, 2)
     embeddings_3d = compute_umap(embeddings, 3)
@@ -356,11 +378,13 @@ def process_section(cache_path, base_path, prefix, is_image=False):
         {
             'id': f'{prefix}-2d',
             'kind': kind,
+            'stats': stats,
             'figure': make_figure(embeddings_2d, titles, groups, previews=previews),
         },
         {
             'id': f'{prefix}-3d',
             'kind': kind,
+            'stats': stats,
             'figure': make_figure(embeddings_3d, titles, groups, previews=previews),
         },
     ]
