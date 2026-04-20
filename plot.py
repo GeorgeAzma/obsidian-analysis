@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 from pygments.formatters import HtmlFormatter
 import umap
 
-from config import image_cache_file, image_path, note_cache_file, vault_path
+from config import image_cache_file, image_path, note_cache_file, summary_cache_file, vault_path
 from src.markdown_preview import build_wikilink_map, render_markdown_preview
 
 
@@ -55,9 +55,9 @@ def format_item_details(item, is_image=False):
         return f'{resolution} • {file_size} • {created_at}'
 
     stats = item.get('stats') or {}
-    word_count = stats.get('word_count', 0)
-    unique_word_count = stats.get('unique_word_count', 0)
-    character_count = stats.get('character_count', 0)
+    word_count = stats.get('words', stats.get('word_count', 0))
+    unique_word_count = stats.get('unique_words', stats.get('unique_word_count', 0))
+    character_count = stats.get('chars', stats.get('character_count', 0))
     return f'{word_count} words • {unique_word_count} unique • {character_count} chars'
 
 
@@ -295,7 +295,7 @@ def make_figure(embeddings, titles, groups, previews=None, details=None):
     return fig
 
 
-def write_index_html(output_path, sections):
+def write_index_html(output_path, sections, global_summary):
     plots = {}
     for section in sections:
         plots[section['id']] = {
@@ -307,6 +307,7 @@ def write_index_html(output_path, sections):
     html_content = template.substitute(
         pygments_css=HtmlFormatter(style='github-dark').get_style_defs('.codehilite'),
         plots_json=json.dumps(plots, separators=(',', ':')),
+        global_summary_json=json.dumps(format_global_summary(global_summary)),
     )
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(html_content)
@@ -353,6 +354,19 @@ def build_note_previews(items, max_length=1600):
     return previews
 
 
+def format_global_summary(summary):
+    if not summary:
+        return 'Global metadata\nUnavailable'
+
+    return ' • '.join([
+        f'{summary.get('notes', 0):,} notes',
+        f'{summary.get('images', 0):,} images',
+        f'{summary.get('words', 0):,} words',
+        f'{summary.get('unique_words', 0):,} unique',
+        f'{summary.get('chars', 0):,} chars',
+    ])
+
+
 def process_section(cache_path, base_path, prefix, is_image=False):
     if not os.path.exists(cache_path):
         print(f"Skipping {prefix} plot generation because pickle file does not exist: {cache_path}")
@@ -390,10 +404,11 @@ def process_section(cache_path, base_path, prefix, is_image=False):
 def main():
     ensure_output_dir()
     sections = []
+    global_summary = load_pickle(summary_cache_file) if os.path.exists(summary_cache_file) else None
     sections.extend(process_section(note_cache_file, vault_path, 'notes', is_image=False) or [])
     sections.extend(process_section(image_cache_file, image_path, 'images', is_image=True) or [])
     index_path = os.path.abspath('output/index.html')
-    write_index_html(index_path, sections)
+    write_index_html(index_path, sections, global_summary)
     webbrowser.open(path_uri(index_path))
 
 

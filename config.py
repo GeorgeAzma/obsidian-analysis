@@ -1,5 +1,6 @@
 note_cache_file = "output/notes.pkl"
 image_cache_file = "output/images.pkl"
+summary_cache_file = "output/summary.pkl"
 
 note_embedding_model = "Qwen/Qwen3-Embedding-4B" # "Qwen/Qwen3-Embedding-8B" for better quality but much slower
 image_embedding_model = "Qwen/Qwen3-VL-Embedding-2B" # "Qwen/Qwen3-VL-Embedding-8B" for better quality but much slower

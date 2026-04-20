@@ -13,6 +13,7 @@ from transformers import AutoTokenizer, AutoModel, BitsAndBytesConfig
 from config import (
     note_cache_file,
     image_cache_file,
+    summary_cache_file,
     note_embedding_model,
     image_embedding_model,
     vault_path,
@@ -59,9 +60,9 @@ def analyze_note_text(text):
     words = re.findall(r'\b\w+\b', text.lower())
     filtered_words = [word for word in words if word not in STOP_WORDS and len(word) > 2]
     return {
-        'word_count': len(words),
-        'unique_word_count': len(set(filtered_words)),
-        'character_count': len(text),
+        'words': len(words),
+        'unique_words': len(set(filtered_words)),
+        'chars': len(text),
     }
 
 
@@ -99,6 +100,29 @@ def enrich_image_item(item):
     if 'metadata' not in enriched_item and enriched_item.get('path') and os.path.exists(enriched_item['path']):
         enriched_item['metadata'] = get_image_metadata(enriched_item['path'])
     return enriched_item
+
+
+def build_global_summary(note_items, image_items):
+    word_count = 0
+    unique_words = set()
+    chars = 0
+
+    for item in note_items:
+        stats = item.get('stats') or {}
+        word_count += stats.get('words', 0)
+        chars += stats.get('chars', 0)
+
+        text = item.get('text', '') or ''
+        text_words = re.findall(r'\b\w+\b', text.lower())
+        unique_words.update(word for word in text_words if word not in STOP_WORDS and len(word) > 2)
+
+    return {
+        'notes': len(note_items),
+        'images': len(image_items),
+        'words': word_count,
+        'unique_words': len(unique_words),
+        'chars': chars,
+    }
 
 
 def process_notes(model_name, batch_size=1, max_length=4096):
@@ -227,6 +251,9 @@ def main():
             images.extend(process_images(image_embedding_model))
     else:
         print(f"No images found in {image_path}; skipping image embedding generation.")
+
+    with open(summary_cache_file, "wb") as f:
+        pickle.dump(build_global_summary(notes, images), f)
 
 
 if __name__ == "__main__":
