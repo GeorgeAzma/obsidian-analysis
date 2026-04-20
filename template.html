@@ -1,0 +1,154 @@
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; color: #d7dee8; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }
+body { position: relative; }
+.tabs { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1000; display: flex; gap: 8px; pointer-events: auto; }
+.tab { appearance: none; border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(13, 17, 23, 0.12); color: #c9d1d9; border-radius: 999px; padding: 8px 14px; font: inherit; cursor: pointer; backdrop-filter: blur(8px); }
+.tab.active { background: rgba(31, 111, 235, 0.92); border-color: rgba(31, 111, 235, 0.92); color: #fff; }
+.views { position: absolute; inset: 0; }
+.view { position: absolute; inset: 0; display: none; }
+.view.active { display: block; }
+.plot { width: 100%; height: 100%; }
+.preview { position: absolute; top: 16px; z-index: 1000; display: none; pointer-events: none; background: rgba(15, 17, 20, 0.58); color: #dbe2ea; border: 1px solid rgba(255, 255, 255, 0.10); border-radius: 12px; padding: 14px 16px; max-width: 620px; max-height: 680px; overflow: hidden; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.30); backdrop-filter: blur(12px); }
+.preview.image { padding: 10px; max-width: 520px; max-height: 540px; }
+.preview img { max-width: 500px; max-height: 500px; display: block; border-radius: 8px; }
+.markdown-preview { color: #dbe2ea; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; font-size: 14px; line-height: 1.55; }
+.markdown-preview * { box-sizing: border-box; }
+.markdown-preview h1, .markdown-preview h2, .markdown-preview h3, .markdown-preview h4, .markdown-preview h5, .markdown-preview h6 { color: #f1f5f9; margin: 0 0 6px; line-height: 1.2; font-weight: 600; }
+.markdown-preview p { margin: 0 0 10px; }
+.markdown-preview ul, .markdown-preview ol { margin: 0 0 10px 20px; padding: 0; }
+.markdown-preview li { margin: 0 0 4px; }
+.markdown-preview code { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace; background: rgba(148, 163, 184, 0.16); padding: 1px 5px; border-radius: 4px; font-size: 0.95em; }
+.markdown-preview pre { background: #121212aa; color: #e2e8f0; padding: 10px 12px; border-radius: 10px; overflow: hidden; margin: 0 0 10px; white-space: pre-wrap; tab-size: 4; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace; }
+.markdown-preview pre code { background: transparent; padding: 0; white-space: inherit; }
+.markdown-preview .codehilite { margin: 0 0 10px; }
+.markdown-preview .codehilite pre { margin: 0; background: #121212aa; color: #e2e8f0; }
+.markdown-preview .callout { margin: 0 0 10px; padding: 10px 12px 10px 16px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.10); background: rgba(30, 41, 59, 0.38); border-left-width: 4px; border-left-style: solid; border-left-color: var(--callout-accent, #60a5fa); }
+.markdown-preview .callout-title { font-weight: 700; color: var(--callout-accent, #60a5fa); margin: 0 0 6px; }
+.markdown-preview .callout-content > :last-child { margin-bottom: 0; }
+.markdown-preview .callout-note { border-left: 3px solid #a78bfa; }
+.markdown-preview .callout-info { border-left: 3px solid #60a5fa; }
+.markdown-preview .callout-tip { border-left: 3px solid #34d399; }
+.markdown-preview .callout-important { border-left: 3px solid #f472b6; }
+.markdown-preview .callout-success { border-left: 3px solid #22c55e; }
+.markdown-preview .callout-question { border-left: 3px solid #38bdf8; }
+.markdown-preview .callout-warning { border-left: 3px solid #f59e0b; }
+.markdown-preview .callout-danger { border-left: 3px solid #ef4444; }
+.markdown-preview .callout-example { border-left: 3px solid #c084fc; }
+.markdown-preview .callout-quote { border-left: 3px solid #94a3b8; }
+.markdown-preview img { display: none; }
+.markdown-preview table { border-collapse: collapse; margin: 0 0 10px; width: 100%; }
+.markdown-preview th, .markdown-preview td { border: 1px solid rgba(148, 163, 184, 0.2); padding: 4px 8px; }
+.markdown-preview hr { border: none; border-top: 1px solid rgba(148, 163, 184, 0.2); margin: 10px 0; }
+${pygments_css}
+</style>
+<script>
+window.MathJax = {
+    tex: {
+        inlineMath: [['$$', '$$']],
+        displayMath: [['$$$$', '$$$$']]
+    },
+    svg: { fontCache: 'global' }
+};
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+<script src="https://cdn.plot.ly/plotly-3.5.0.min.js"></script>
+<script>
+window.__PLOTS__ = ${plots_json};
+
+function placePreview(preview, clientX) {
+    if (typeof clientX === 'number' && clientX > window.innerWidth / 2) {
+        preview.style.left = '16px';
+        preview.style.right = 'auto';
+    } else {
+        preview.style.left = 'auto';
+        preview.style.right = '16px';
+    }
+}
+
+function attachHoverHandlers(plotDiv, preview, kind) {
+    plotDiv.on('plotly_hover', function(event) {
+        var pt = event.points && event.points[0];
+        if (!pt || !pt.customdata || !pt.customdata[1]) return;
+        var nativeEvent = event.event || {};
+        var touchPoint = nativeEvent.touches && nativeEvent.touches[0] ? nativeEvent.touches[0] : (nativeEvent.changedTouches && nativeEvent.changedTouches[0] ? nativeEvent.changedTouches[0] : null);
+        var clientX = typeof nativeEvent.clientX === 'number' ? nativeEvent.clientX : (touchPoint ? touchPoint.clientX : null);
+        placePreview(preview, clientX);
+        if (kind === 'image') {
+            preview.querySelector('img').src = pt.customdata[1];
+        } else {
+            preview.querySelector('.markdown-preview').innerHTML = pt.customdata[1];
+            if (window.MathJax && MathJax.typesetPromise) {
+                MathJax.typesetPromise([preview.querySelector('.markdown-preview')]).catch(function() {});
+            }
+        }
+        preview.style.display = 'block';
+    });
+
+    plotDiv.on('plotly_unhover', function() {
+        preview.style.display = 'none';
+    });
+}
+
+function renderSection(sectionId) {
+    var section = window.__PLOTS__[sectionId];
+    var view = document.getElementById(sectionId);
+    var plot = view.querySelector('.plot');
+    if (plot.dataset.rendered) return;
+
+    var preview = view.querySelector('.preview');
+    var figure = section.figure;
+    var config = { displayModeBar: false, displaylogo: false, responsive: true };
+
+    Plotly.newPlot(plot, figure.data, figure.layout, config).then(function() {
+        attachHoverHandlers(plot, preview, section.kind);
+        plot.dataset.rendered = '1';
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
+    var views = Array.prototype.slice.call(document.querySelectorAll('.view'));
+
+    function activate(name) {
+        tabs.forEach(function(tab) {
+            tab.classList.toggle('active', tab.dataset.target === name);
+        });
+        views.forEach(function(view) {
+            var active = view.id === name;
+            view.classList.toggle('active', active);
+        });
+        renderSection(name);
+        var plot = document.querySelector('#' + name + ' .plot');
+        if (plot && plot.dataset.rendered) {
+            requestAnimationFrame(function() { Plotly.Plots.resize(plot); });
+        }
+    }
+
+    tabs.forEach(function(tab) {
+        tab.addEventListener('click', function() {
+            activate(tab.dataset.target);
+        });
+    });
+
+    activate('notes-2d');
+});
+</script>
+</head>
+<body>
+<div class="tabs">
+    <button class="tab" data-target="notes-2d">Notes 2D</button>
+    <button class="tab" data-target="notes-3d">Notes 3D</button>
+    <button class="tab" data-target="images-2d">Images 2D</button>
+    <button class="tab" data-target="images-3d">Images 3D</button>
+</div>
+<div class="views">
+    <div class="view" id="notes-2d"><div class="plot"></div><div class="preview"><div class="markdown-preview"></div></div></div>
+    <div class="view" id="notes-3d"><div class="plot"></div><div class="preview"><div class="markdown-preview"></div></div></div>
+    <div class="view" id="images-2d"><div class="plot"></div><div class="preview image"><img src="" alt="Preview"></div></div>
+    <div class="view" id="images-3d"><div class="plot"></div><div class="preview image"><img src="" alt="Preview"></div></div>
+</div>
+</body>
+</html>

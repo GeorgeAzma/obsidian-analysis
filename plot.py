@@ -1,6 +1,8 @@
 import os
+import json
 import pickle
 import webbrowser
+from string import Template
 from pathlib import Path
 
 import numpy as np
@@ -225,51 +227,41 @@ document.addEventListener('DOMContentLoaded', function() {
         f.write(html_content)
 
 
-def build_2d_plot(embeddings_2d, titles, groups, output_path, is_image=False, previews=None):
+def make_figure(embeddings, titles, groups, previews=None):
     hover_template = '<b>%{text}</b><br>%{customdata[0]}<extra></extra>'
     customdata = list(zip(groups, previews))
+    if embeddings.shape[1] == 2:
+        fig = go.Figure(data=go.Scatter(
+            x=embeddings[:, 0],
+            y=embeddings[:, 1],
+            mode='markers',
+            marker={'size': 8, 'opacity': 0.6, 'color': color_map(groups)},
+            text=titles,
+            customdata=customdata,
+            hovertemplate=hover_template,
+        ))
+        fig.update_layout(
+            xaxis=dict(showgrid=False, showticklabels=False, showline=False, zeroline=False, title=None),
+            yaxis=dict(showgrid=False, showticklabels=False, showline=False, zeroline=False, title=None),
+            showlegend=False,
+            title=None,
+            margin=dict(l=0, r=0, t=0, b=0),
+            autosize=True,
+            hovermode='closest',
+            template='plotly_dark',
+        )
+        return fig
 
-    trace_kwargs = {
-        'x': embeddings_2d[:, 0],
-        'y': embeddings_2d[:, 1],
-        'mode': 'markers',
-        'marker': {'size': 8, 'opacity': 0.6, 'color': color_map(groups)},
-        'text': titles,
-        'customdata': customdata,
-        'hovertemplate': hover_template,
-    }
-
-    fig = go.Figure(data=go.Scatter(**trace_kwargs))
-    fig.update_layout(
-        xaxis=dict(showgrid=False, showticklabels=False, showline=False, zeroline=False, title=None),
-        yaxis=dict(showgrid=False, showticklabels=False, showline=False, zeroline=False, title=None),
-        showlegend=False,
-        title=None,
-        margin=dict(l=0, r=0, t=0, b=0),
-        autosize=True,
-        hovermode='closest',
-        template='plotly_dark',
-    )
-    write_html(fig, output_path, preview_kind='image' if is_image else 'notes')
-    webbrowser.open(path_uri(output_path))
-
-
-def build_3d_plot(embeddings_3d, titles, groups, output_path, is_image=False, previews=None):
-    hover_template = '<b>%{text}</b><br>%{customdata[0]}<extra></extra>'
-    customdata = list(zip(groups, previews))
-
-    trace_kwargs = {
-        'x': embeddings_3d[:, 0],
-        'y': embeddings_3d[:, 1],
-        'z': embeddings_3d[:, 2],
-        'mode': 'markers',
-        'marker': {'size': 5, 'opacity': 0.5, 'color': color_map(groups)},
-        'text': titles,
-        'customdata': customdata,
-        'hovertemplate': hover_template,
-    }
-
-    fig = go.Figure(data=go.Scatter3d(**trace_kwargs))
+    fig = go.Figure(data=go.Scatter3d(
+        x=embeddings[:, 0],
+        y=embeddings[:, 1],
+        z=embeddings[:, 2],
+        mode='markers',
+        marker={'size': 5, 'opacity': 0.5, 'color': color_map(groups)},
+        text=titles,
+        customdata=customdata,
+        hovertemplate=hover_template,
+    ))
     fig.update_layout(
         scene=dict(
             xaxis=dict(showticklabels=False, showline=False, zeroline=False, title=None),
@@ -284,8 +276,24 @@ def build_3d_plot(embeddings_3d, titles, groups, output_path, is_image=False, pr
         hovermode='closest',
         template='plotly_dark',
     )
-    write_html(fig, output_path, preview_kind='image' if is_image else 'notes')
-    webbrowser.open(path_uri(output_path))
+    return fig
+
+
+def write_index_html(output_path, sections):
+    plots = {}
+    for section in sections:
+        plots[section['id']] = {
+            'figure': json.loads(section['figure'].to_json()),
+            'kind': section['kind'],
+        }
+    with open('template.html', 'r', encoding='utf-8') as f:
+        template = Template(f.read())
+    html_content = template.substitute(
+        pygments_css=HtmlFormatter(style='github-dark').get_style_defs('.codehilite'),
+        plots_json=json.dumps(plots, separators=(',', ':')),
+    )
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(html_content)
 
 
 def build_groups(items, base_path):
@@ -339,20 +347,33 @@ def process_section(cache_path, base_path, prefix, is_image=False):
     embeddings = np.array([item['embedding'] for item in items])
     groups = build_groups(items, base_path)
     previews = build_image_uris(items) if is_image else build_note_previews(items)
+    kind = 'image' if is_image else 'notes'
 
     embeddings_2d = compute_umap(embeddings, 2)
     embeddings_3d = compute_umap(embeddings, 3)
 
-    output_2d = os.path.abspath(f'output/{prefix}-2d.html')
-    output_3d = os.path.abspath(f'output/{prefix}-3d.html')
-    build_2d_plot(embeddings_2d, titles, groups, output_2d, is_image=is_image, previews=previews)
-    build_3d_plot(embeddings_3d, titles, groups, output_3d, is_image=is_image, previews=previews)
+    return [
+        {
+            'id': f'{prefix}-2d',
+            'kind': kind,
+            'figure': make_figure(embeddings_2d, titles, groups, previews=previews),
+        },
+        {
+            'id': f'{prefix}-3d',
+            'kind': kind,
+            'figure': make_figure(embeddings_3d, titles, groups, previews=previews),
+        },
+    ]
 
 
 def main():
     ensure_output_dir()
-    process_section(note_cache_file, vault_path, 'notes', is_image=False)
-    process_section(image_cache_file, image_path, 'images', is_image=True)
+    sections = []
+    sections.extend(process_section(note_cache_file, vault_path, 'notes', is_image=False) or [])
+    sections.extend(process_section(image_cache_file, image_path, 'images', is_image=True) or [])
+    index_path = os.path.abspath('output/index.html')
+    write_index_html(index_path, sections)
+    webbrowser.open(path_uri(index_path))
 
 
 if __name__ == '__main__':
