@@ -2,7 +2,6 @@ Analyze and visualize your obsidian vault and images based on semantic similarit
 
 ![notes-2d](notes-2d.png) ![notes-3d](notes-3d.png)
 ![images-2d](images-2d.png) ![images-3d](images-3d.png)
-![combined-2d](combined-2d.png) ![combined-3d](combined-3d.png)
 
 ### How to use
 
